@@ -66,7 +66,7 @@ pointsScaling <- function(team1, team2){
 }
 
 NFLteamRasterGROBs <- lapply(NFLteamInfo$Team, function(x){
-  logo_dir <- "~/Documents/Coding/NFL/Logos/"
+  logo_dir <- "Logos/"
   team <- x
   logo_ID <- dir(logo_dir)[which(str_detect(dir(logo_dir), team))]
   image_path <- paste0(logo_dir, logo_ID)
@@ -138,7 +138,7 @@ NFLteamInfo$y <- rep(4:1, each = 8)
 NFLteamInfo$x <- rep(c(1:4, 6:9), 4)
 
 NFLteamLogos <- lapply(NFLteamInfo$Team, function(x){
-  logo_dir <- "~/Documents/Coding/NFL/Logos/"
+  logo_dir <- "Logos/"
   team <- x
   logo_ID <- dir(logo_dir)[which(str_detect(dir(logo_dir), team))]
   image_path <- paste0(logo_dir, logo_ID)
