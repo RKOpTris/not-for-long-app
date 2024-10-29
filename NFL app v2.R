@@ -177,7 +177,7 @@ ui <- fluidPage(
   fluidRow(
     column(2,
            h3("NFL app v2")
-           ),
+    ),
     column(2,
            "Placeholder"
     ),
@@ -232,6 +232,13 @@ ui <- fluidPage(
            ),
            fluidRow(
              column(3,
+                    div(
+                      style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
+                      div(
+                        style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
+                        imageOutput("team1_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
+                      )
+                    ),
                     h2(textOutput("team1_banner"), class = "center-text"),
                     h2(textOutput("team1_record"), class = "center-text"),
                     h2(textOutput("team1_home"), class = "center-text"),
@@ -247,15 +254,22 @@ ui <- fluidPage(
                     fluidRow(
                       column(6,
                              plotOutput("team1_forAgainstPlot")
-                             ),
+                      ),
                       column(6,
                              plotOutput("team2_forAgainstPlot")
-                             )
+                      )
                     )#,
                     #verbatimTextOutput("scaled_y_scores"),
                     #verbatimTextOutput("scaled_y_difference")
              ),
              column(3,
+                    div(
+                      style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
+                      div(
+                        style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
+                        imageOutput("team2_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
+                      )
+                    ),
                     h2(textOutput("team2_banner"), class = "center-text"),
                     h2(textOutput("team2_record"), class = "center-text"),
                     h2(textOutput("team2_home"), class = "center-text"),
@@ -326,6 +340,34 @@ ui <- fluidPage(
 )
 
 server <- function(input, output) {
+  output$team1_logo <- renderImage({
+    logo_dir <- "Logos/"
+    team <- selected_team1()
+    logo_ID <- dir(logo_dir)[which(str_detect(dir(logo_dir), team))]
+    image_path <- paste0(logo_dir, logo_ID)
+    list(
+      src = image_path,
+      contentType = "image/png",
+      width = 200,
+      #height = 300,
+      alt = selected_team1()
+    )
+  }, deleteFile = FALSE)
+  
+  output$team2_logo <- renderImage({
+    logo_dir <- "Logos/"
+    team <- selected_team2()
+    logo_ID <- dir(logo_dir)[which(str_detect(dir(logo_dir), team))]
+    image_path <- paste0(logo_dir, logo_ID)
+    list(
+      src = image_path,
+      contentType = "image/png",
+      width = 200,
+      #height = 300,
+      alt = selected_team2()
+    )
+  }, deleteFile = FALSE)
+  
   output$nfl_win_rate <- renderPlot({
     team1 <- selected_team1()
     team2 <- selected_team2()
@@ -613,6 +655,6 @@ server <- function(input, output) {
 
 shinyApp(ui = ui, server = server)
 
-   
+
 
 
