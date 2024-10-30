@@ -191,8 +191,7 @@ ui <- fluidPage(
            h3(checkboxInput("show_team_tables", "Show team tables", value = F))
     ),
     column(2,
-           "Placeholder"
-           #h3(checkboxInput("show_season_results", "Show season results", value = T))
+           h3(checkboxInput("show_season_results", "Show season results", value = T))
     )
   ),
   fluidRow(
@@ -241,6 +240,7 @@ ui <- fluidPage(
                       )
                     ),
                     h2(textOutput("team1_banner"), class = "center-text"),
+                    h2(textOutput("team1_affiliation"), class = "center-text"),
                     h2(textOutput("team1_record"), class = "center-text"),
                     h2(textOutput("team1_home"), class = "center-text"),
                     h2(textOutput("team1_away"), class = "center-text"),
@@ -272,6 +272,7 @@ ui <- fluidPage(
                       )
                     ),
                     h2(textOutput("team2_banner"), class = "center-text"),
+                    h2(textOutput("team2_affiliation"), class = "center-text"),
                     h2(textOutput("team2_record"), class = "center-text"),
                     h2(textOutput("team2_home"), class = "center-text"),
                     h2(textOutput("team2_away"), class = "center-text"),
@@ -306,7 +307,7 @@ ui <- fluidPage(
                     #          ""
                     #   )
                     # ),
-                    plotOutput("team1_scorePlot", height = 425)
+                    plotOutput("team1_scorePlot", height = 400)
              ),
              column(6,
                     #h2(selectInput("team2", "Team 2", choices = NFLteams, selected = NFLteams[2])),
@@ -333,7 +334,7 @@ ui <- fluidPage(
                     #          ""
                     #   )
                     # ),
-                    plotOutput("team2_scorePlot", height = 425)
+                    plotOutput("team2_scorePlot", height = 400)
              )
            )
     )
@@ -368,6 +369,20 @@ server <- function(input, output) {
       alt = selected_team2()
     )
   }, deleteFile = FALSE)
+  
+  output$team1_affiliation <- renderText({
+    paste(
+    as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Conference),
+    as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Division)
+    )
+  })
+  
+  output$team2_affiliation <- renderText({
+    paste(
+      as.character(NFLteamInfo[NFLteamInfo$Team == selected_team2(), ]$Conference),
+      as.character(NFLteamInfo[NFLteamInfo$Team == selected_team2(), ]$Division)
+    )
+  })
   
   output$nfl_win_rate <- renderPlot({
     team1 <- selected_team1()
