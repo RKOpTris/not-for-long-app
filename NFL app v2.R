@@ -191,7 +191,8 @@ ui <- fluidPage(
            h3(checkboxInput("show_team_tables", "Show team tables", value = F))
     ),
     column(2,
-           h3(checkboxInput("show_season_results", "Show season results", value = T))
+           "Placeholder"
+           #h3(checkboxInput("show_season_results", "Show season results", value = T))
     )
   ),
   fluidRow(
@@ -524,7 +525,7 @@ server <- function(input, output) {
   
   cumulative_clicks <- reactiveVal(0)
   selected_team1 <- reactiveVal("Ravens")
-  selected_team2 <- reactiveVal("Steelers")
+  selected_team2 <- reactiveVal("Broncos")
   
   output$cum_clicks <- renderPrint({
     cumulative_clicks()
