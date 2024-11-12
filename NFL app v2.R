@@ -1,6 +1,167 @@
+source("/Users/mukappa/Documents/Coding/r-useful-funs/sourcewd.R")
+sourcewd()
+NFLweek <- 10
+
 library(grid)
 library(png)
 library(shiny)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+scoreSheets <- do.call(rbind, lapply(1:NFLweek, function(x){
+  outp <- readxl::read_xlsx("NFL 2024 results.xlsx", sheet = x)
+  outp$Week <- x
+  outp[complete.cases(outp), ]
+}))
+scoreSheets$Game_ID <- 1:nrow(scoreSheets)
+scoreSheets <- scoreSheets %>% mutate(Gross_PD = abs(`Visitors score` - `Home score`))
+
+NFLtable <- readxl::read_xlsx("NFL table.xlsx")
+NFLtable$`Win history` <- ""
+NFLtable$`Location history` <- ""
+
+predictionRecord <- data.frame()
+
+for(i in 1:nrow(scoreSheets)){
+  print(i)
+  currResult <- scoreSheets[i, ]
+  visitors <- currResult$`Visitors team`
+  hosts <- currResult$`Home team`
+  # can just calculate this, so just do wins/losses
+  NFLtable[NFLtable$Team == visitors, ]$Played <- NFLtable[NFLtable$Team == visitors, ]$Played + 1 
+  NFLtable[NFLtable$Team == hosts, ]$Played <- NFLtable[NFLtable$Team == hosts, ]$Played + 1
+  NFLtable[NFLtable$Team == visitors, ]$`Location history` <- paste0(NFLtable[NFLtable$Team == visitors, ]$`Location history`, "A")
+  NFLtable[NFLtable$Team == hosts, ]$`Location history` <- paste0(NFLtable[NFLtable$Team == hosts, ]$`Location history`, "H")
+  
+  winType <- unname(ifelse(which.max(c(currResult[c(2, 4)])) == 1, "Away", "Home"))
+  
+  if(winType == "Home"){
+    winners <- hosts
+    losers <- visitors
+  } else {
+    winners <- visitors
+    losers <- hosts
+  }
+  
+  if(currResult$Prediction != "NA"){
+    predictionRecord <- rbind(predictionRecord, data.frame(Week = currResult$Week, Correct_prediction = winners == currResult$Prediction, Game_ID = currResult$Game_ID))
+  }
+  
+  NFLtable[NFLtable$Team == winners, ]$`Win history` <- paste0(NFLtable[NFLtable$Team == winners, ]$`Win history`, "W")
+  NFLtable[NFLtable$Team == losers, ]$`Win history` <- paste0(NFLtable[NFLtable$Team == losers, ]$`Win history`, "L")
+  NFLtable[NFLtable$Team == winners, ]$Win <- NFLtable[NFLtable$Team == winners, ]$Win + 1
+  NFLtable[NFLtable$Team == losers, ]$Loss <- NFLtable[NFLtable$Team == losers, ]$Loss + 1
+  
+  NFLtable[NFLtable$Team == currResult$`Home team`, ]$`Points against` <- NFLtable[NFLtable$Team == currResult$`Home team`, ]$`Points against` + currResult$`Visitors score`
+  NFLtable[NFLtable$Team == currResult$`Visitors team`, ]$`Points for` <- NFLtable[NFLtable$Team == currResult$`Visitors team`, ]$`Points for` + currResult$`Visitors score`
+  NFLtable[NFLtable$Team == currResult$`Visitors team`, ]$`Points against` <- NFLtable[NFLtable$Team == currResult$`Visitors team`, ]$`Points against` + currResult$`Home score`
+  NFLtable[NFLtable$Team == currResult$`Home team`, ]$`Points for` <- NFLtable[NFLtable$Team == currResult$`Home team`, ]$`Points for` + currResult$`Home score`
+  
+  if(winType == "Home"){
+    NFLtable[NFLtable$Team == hosts, ]$`Home wins` <- NFLtable[NFLtable$Team == hosts, ]$`Home wins` + 1
+    NFLtable[NFLtable$Team == visitors, ]$`Away losses` <- NFLtable[NFLtable$Team == visitors, ]$`Away losses` + 1
+  } else {
+    NFLtable[NFLtable$Team == hosts, ]$`Home losses` <- NFLtable[NFLtable$Team == hosts, ]$`Home losses` + 1
+    NFLtable[NFLtable$Team == visitors, ]$`Away wins` <- NFLtable[NFLtable$Team == hosts, ]$`Away wins` + 1
+  }
+  
+  ### this is not working!
+  if(currResult$`Home score` > currResult$`Visitors score`){
+    NFLtable[NFLtable$Team == hosts, ]$`Home win rate` <- NFLtable[NFLtable$Team == hosts, ]$Played + 1
+  }
+}
+
+NFLtable$`Points difference` <- NFLtable$`Points for` - NFLtable$`Points against`
+NFLtable$`Points difference prop` <- NFLtable$`Points for` / NFLtable$`Points against`
+NFLtable$`Win rate` <- NFLtable$Win / NFLtable$Played
+NFLtable$`Win rate verbose` <- paste0(NFLtable$Win, "-", NFLtable$Loss)
+
+NFLtable %>% data.frame %>% dplyr::select(Team, Points.difference) %>% arrange(desc(`Points.difference`))
+
+NFLtable %>% 
+  dplyr::select(Team, `Win rate`, `Win rate verbose`, `Points for`, `Points against`, `Points difference prop`, Conference, Division) %>% 
+  dplyr::arrange(Conference, Division, desc(`Win rate`)) %>%
+  print(n = Inf)
+
+divisionStats <- function(con, div){
+  NFLtable %>%
+    filter(Conference == con, Division == div) %>%
+    dplyr::select(Team, `Win rate`, `Win rate verbose`, `Points difference`, `Points difference prop`) %>%
+    dplyr::arrange(desc(`Win rate`), desc(`Points difference`)) %>%
+    setNames(c("Team", "W%", "W-L", "PD", "PDP")) %>%
+    mutate(`W%` = as.integer(`W%` * 100), PD = as.integer(PD))
+}
+
+#### need to plug in exhibition games here
+winRecords <- lapply(NFLtable$`Win history`, function(x){str_split(x, "") %>% unlist %>% data.frame() %>% setNames("Win_Loss")})
+locationRecords <- lapply(NFLtable$`Location history`, function(x){str_split(x, "") %>% unlist %>% data.frame() %>% setNames("Home_Away")})
+fullWinRecords <- lapply(1:length(winRecords), function(x){bind_cols(winRecords[[x]], locationRecords[[x]])})
+names(fullWinRecords) <- NFLtable$Team
+
+homeAwayRates <- function(teamOfInterest){
+  record <- fullWinRecords[[teamOfInterest]]
+  homeWins <- record %>% filter(Home_Away == "H")
+  homeRate <- mean(homeWins$Win_Loss == "W")
+  awayWins <- record %>% filter(Home_Away == "A")
+  awayRate <- mean(awayWins$Win_Loss == "W")
+  c(homeRate, awayRate)
+}
+
+### get streak
+NFLtable$Streak <- ""
+for(i in 1:nrow(NFLtable)){
+  currentRecord <- NFLtable$`Win history`[i]
+  previousResult <- str_sub(currentRecord, -1)
+  currentStreak <- 1
+  streakMatch <- T
+  str_sub(currentRecord, -1) <- ""
+  while(streakMatch){
+    if(str_sub(currentRecord, -1) == previousResult){
+      str_sub(currentRecord, -1) <- ""
+      currentStreak <- currentStreak + 1
+    } else {
+      currentStreak <- paste0(currentStreak, previousResult)
+      streakMatch <- F
+    }
+  }
+  NFLtable$Streak[i] <- currentStreak
+}
+
+getRank <- function(myStat, desc = T){
+  rank <- NFLtable[, c("Team", myStat)]
+  if(desc){
+    rank <- rank %>% arrange(desc(!!sym(myStat)))
+  } else {
+    rank <- rank %>% arrange(!!sym(myStat))
+  }
+  rank <- rank %>% mutate(Rank = as.numeric(factor(!!sym(myStat), levels = unique(!!sym(myStat)))))
+  rankCounts <- rank %>% count(Rank)
+  equalRanks <- rankCounts$Rank[which(rankCounts$n > 1)]
+  rank$shortRank <- ifelse(rank$Rank %in% equalRanks, paste0(rank$Rank, "="), as.character(rank$Rank))
+  rank$longRank <- paste0(rank$shortRank, " (/", max(rank$Rank), ")")
+  rank
+}
+
+getRank("Win rate", desc = T)
+getRank("Points for", desc = T)
+getRank("Points against", desc = F)
+getRank("Points difference", desc = T)
+getRank("Points difference prop", desc = T)
+
+predictionRecord <- predictionRecord %>% left_join(select(scoreSheets, Game_ID, Gross_PD), by = "Game_ID")
+predictionAccuracy <- predictionRecord %>% group_by(Week) %>% summarise(Accuracy = sum(Correct_prediction) / length(Correct_prediction))
+predictionPD <- predictionRecord %>% group_by(Week, Correct_prediction) %>% summarise(Mean_PD = median(Gross_PD))
+predictionPD$Correct_prediction <- ifelse(predictionPD$Correct_prediction, "Correct", "Incorrect")
+
+NFLteams <- sort(NFLtable$Team)
+
+NFLteamInfo <- NFLtable %>% select(City, Team, Division, Conference)
+NFLteamInfo$Division <- factor(NFLteamInfo$Division, levels = c("North", "East", "South", "West"))
+NFLteamInfo$Conference <- factor(NFLteamInfo$Conference, levels = c("AFC", "NFC"))
+NFLteamInfo <- NFLteamInfo %>% arrange(Division, Conference)
+NFLteamInfo$y <- rep(4:1, each = 8)
+NFLteamInfo$x <- rep(c(1:4, 6:9), 4)
 
 colour_palette <- list(
   primary = "#59c7f3",
@@ -174,169 +335,180 @@ ui <- fluidPage(
       "
     )))
   ),
-  fluidRow(
-    column(2,
-           h3("NFL app v2")
+  tabsetPanel(
+    tabPanel(
+      "Team performance",
+      fluidRow(
+        column(2,
+               h3("NFL app v2")
+        ),
+        column(2,
+               "Placeholder"
+        ),
+        column(2,
+               h3(checkboxInput("show_afc", "Show AFC results", value = F))
+        ),
+        column(2,
+               h3(checkboxInput("show_nfc", "Show NFC results", value = F))
+        ),
+        column(2,
+               h3(checkboxInput("show_team_tables", "Show team tables", value = F))
+        ),
+        column(2,
+               h3(checkboxInput("show_season_results", "Show season results", value = T))
+        )
+      ),
+      fluidRow(
+        column(2,
+               plotOutput("nfl_pd", height = 1200)
+        ),
+        column(2,
+               plotOutput("nfl_win_rate", height = 1200)
+        ),
+        column(8,
+               fluidRow(
+                 column(3,
+                        tableOutput("AFCnorth")
+                 ),
+                 column(3,
+                        tableOutput("AFCeast")
+                 ),
+                 column(3,
+                        tableOutput("AFCsouth")
+                 ),
+                 column(3,
+                        tableOutput("AFCwest")
+                 )
+               ),
+               fluidRow(
+                 column(3,
+                        tableOutput("NFCnorth")
+                 ),
+                 column(3,
+                        tableOutput("NFCeast")
+                 ),
+                 column(3,
+                        tableOutput("NFCsouth")
+                 ),
+                 column(3,
+                        tableOutput("NFCwest")
+                 )
+               ),
+               fluidRow(
+                 column(3,
+                        div(
+                          style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
+                          div(
+                            style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
+                            imageOutput("team1_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
+                          )
+                        ),
+                        h2(textOutput("team1_banner"), class = "center-text"),
+                        h2(textOutput("team1_affiliation"), class = "center-text"),
+                        h2(textOutput("team1_record"), class = "center-text"),
+                        h2(textOutput("team1_home"), class = "center-text"),
+                        h2(textOutput("team1_away"), class = "center-text"),
+                        h2(textOutput("team1_record_verbose"), class = "center-text"),
+                        h2(textOutput("team1_streak"), class = "center-text")
+                        #verbatimTextOutput("cum_clicks"),
+                        #verbatimTextOutput("team1_selection")
+                        
+                 ),
+                 column(6,
+                        plotlyOutput("team_selector"),
+                        fluidRow(
+                          column(6,
+                                 plotOutput("team1_forAgainstPlot")
+                          ),
+                          column(6,
+                                 plotOutput("team2_forAgainstPlot")
+                          )
+                        )#,
+                        #verbatimTextOutput("scaled_y_scores"),
+                        #verbatimTextOutput("scaled_y_difference")
+                 ),
+                 column(3,
+                        div(
+                          style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
+                          div(
+                            style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
+                            imageOutput("team2_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
+                          )
+                        ),
+                        h2(textOutput("team2_banner"), class = "center-text"),
+                        h2(textOutput("team2_affiliation"), class = "center-text"),
+                        h2(textOutput("team2_record"), class = "center-text"),
+                        h2(textOutput("team2_home"), class = "center-text"),
+                        h2(textOutput("team2_away"), class = "center-text"),
+                        h2(textOutput("team2_record_verbose"), class = "center-text"),
+                        h2(textOutput("team2_streak"), class = "center-text")
+                        #verbatimTextOutput("team2_selection")
+                 )
+               ),
+               fluidRow(
+                 column(6,
+                        #h2(selectInput("team1", "Team 1", choices = NFLteams, selected = NFLteams[1])),
+                        dataTableOutput("team1_table"),
+                        # fluidRow(
+                        #   column(4, 
+                        #          h2(textOutput("team1_record"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team1_home"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team1_away"))
+                        #   )
+                        # ),
+                        # fluidRow(
+                        #   column(4, 
+                        #          h2(textOutput("team1_record_verbose"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team1_streak"))
+                        #   ),
+                        #   column(4,
+                        #          ""
+                        #   )
+                        # ),
+                        plotOutput("team1_scorePlot", height = 400)
+                 ),
+                 column(6,
+                        #h2(selectInput("team2", "Team 2", choices = NFLteams, selected = NFLteams[2])),
+                        dataTableOutput("team2_table"),
+                        # fluidRow(
+                        #   column(4, 
+                        #          h2(textOutput("team2_record"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team2_home"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team2_away"))
+                        #   )
+                        # ),
+                        # fluidRow(
+                        #   column(4, 
+                        #          h2(textOutput("team2_record_verbose"))
+                        #   ),
+                        #   column(4, 
+                        #          h2(textOutput("team2_streak"))
+                        #   ),
+                        #   column(4,
+                        #          ""
+                        #   )
+                        # ),
+                        plotOutput("team2_scorePlot", height = 400)
+                 )
+               )
+        )
+      )
     ),
-    column(2,
-           "Placeholder"
-    ),
-    column(2,
-           h3(checkboxInput("show_afc", "Show AFC results", value = F))
-    ),
-    column(2,
-           h3(checkboxInput("show_nfc", "Show NFC results", value = F))
-    ),
-    column(2,
-           h3(checkboxInput("show_team_tables", "Show team tables", value = F))
-    ),
-    column(2,
-           h3(checkboxInput("show_season_results", "Show season results", value = T))
-    )
-  ),
-  fluidRow(
-    column(2,
-           plotOutput("nfl_pd", height = 1200)
-    ),
-    column(2,
-           plotOutput("nfl_win_rate", height = 1200)
-    ),
-    column(8,
-           fluidRow(
-             column(3,
-                    tableOutput("AFCnorth")
-             ),
-             column(3,
-                    tableOutput("AFCeast")
-             ),
-             column(3,
-                    tableOutput("AFCsouth")
-             ),
-             column(3,
-                    tableOutput("AFCwest")
+    tabPanel("My performance",
+             fluidRow(
+               plotOutput("predictionAccuracy", height = 500),
+               plotOutput("predictionPD", height = 500)
              )
-           ),
-           fluidRow(
-             column(3,
-                    tableOutput("NFCnorth")
-             ),
-             column(3,
-                    tableOutput("NFCeast")
-             ),
-             column(3,
-                    tableOutput("NFCsouth")
-             ),
-             column(3,
-                    tableOutput("NFCwest")
-             )
-           ),
-           fluidRow(
-             column(3,
-                    div(
-                      style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
-                      div(
-                        style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
-                        imageOutput("team1_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
-                      )
-                    ),
-                    h2(textOutput("team1_banner"), class = "center-text"),
-                    h2(textOutput("team1_affiliation"), class = "center-text"),
-                    h2(textOutput("team1_record"), class = "center-text"),
-                    h2(textOutput("team1_home"), class = "center-text"),
-                    h2(textOutput("team1_away"), class = "center-text"),
-                    h2(textOutput("team1_record_verbose"), class = "center-text"),
-                    h2(textOutput("team1_streak"), class = "center-text")
-                    #verbatimTextOutput("cum_clicks"),
-                    #verbatimTextOutput("team1_selection")
-                    
-             ),
-             column(6,
-                    plotlyOutput("team_selector"),
-                    fluidRow(
-                      column(6,
-                             plotOutput("team1_forAgainstPlot")
-                      ),
-                      column(6,
-                             plotOutput("team2_forAgainstPlot")
-                      )
-                    )#,
-                    #verbatimTextOutput("scaled_y_scores"),
-                    #verbatimTextOutput("scaled_y_difference")
-             ),
-             column(3,
-                    div(
-                      style = "height: 300px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd;",  # Center container
-                      div(
-                        style = "max-height: 100%; max-width: 100%; display: flex; align-items: center; justify-content: center;",
-                        imageOutput("team2_logo", width = "auto", height = "auto")  # Set height to fill most of container, maintaining aspect ratio
-                      )
-                    ),
-                    h2(textOutput("team2_banner"), class = "center-text"),
-                    h2(textOutput("team2_affiliation"), class = "center-text"),
-                    h2(textOutput("team2_record"), class = "center-text"),
-                    h2(textOutput("team2_home"), class = "center-text"),
-                    h2(textOutput("team2_away"), class = "center-text"),
-                    h2(textOutput("team2_record_verbose"), class = "center-text"),
-                    h2(textOutput("team2_streak"), class = "center-text")
-                    #verbatimTextOutput("team2_selection")
-             )
-           ),
-           fluidRow(
-             column(6,
-                    #h2(selectInput("team1", "Team 1", choices = NFLteams, selected = NFLteams[1])),
-                    dataTableOutput("team1_table"),
-                    # fluidRow(
-                    #   column(4, 
-                    #          h2(textOutput("team1_record"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team1_home"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team1_away"))
-                    #   )
-                    # ),
-                    # fluidRow(
-                    #   column(4, 
-                    #          h2(textOutput("team1_record_verbose"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team1_streak"))
-                    #   ),
-                    #   column(4,
-                    #          ""
-                    #   )
-                    # ),
-                    plotOutput("team1_scorePlot", height = 400)
-             ),
-             column(6,
-                    #h2(selectInput("team2", "Team 2", choices = NFLteams, selected = NFLteams[2])),
-                    dataTableOutput("team2_table"),
-                    # fluidRow(
-                    #   column(4, 
-                    #          h2(textOutput("team2_record"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team2_home"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team2_away"))
-                    #   )
-                    # ),
-                    # fluidRow(
-                    #   column(4, 
-                    #          h2(textOutput("team2_record_verbose"))
-                    #   ),
-                    #   column(4, 
-                    #          h2(textOutput("team2_streak"))
-                    #   ),
-                    #   column(4,
-                    #          ""
-                    #   )
-                    # ),
-                    plotOutput("team2_scorePlot", height = 400)
-             )
-           )
     )
   )
 )
@@ -372,8 +544,8 @@ server <- function(input, output) {
   
   output$team1_affiliation <- renderText({
     paste(
-    as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Conference),
-    as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Division)
+      as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Conference),
+      as.character(NFLteamInfo[NFLteamInfo$Team == selected_team1(), ]$Division)
     )
   })
   
@@ -666,6 +838,43 @@ server <- function(input, output) {
     if(input$show_season_results){
       forAgainstPlot(selected_team2(), ylimits = scaled_y_axis_scores())
     }
+  })
+  
+  #####################################
+  
+  output$predictionAccuracy <- renderPlot({
+    ggplot(predictionAccuracy, aes(Week, Accuracy * 100)) + 
+      geom_hline(yintercept = 50, col = colour_palette$text) +
+      geom_hline(yintercept = 70, col = colour_palette$text, linetype = 2) +
+      geom_point(col = colour_palette$accent) + 
+      geom_line(col = colour_palette$accent) + 
+      scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) + 
+      scale_x_continuous(limits = c(1, 17), breaks = seq(1, 17, 1)) +
+      labs(main = "My prediction performance",
+           y = "Accuracy (%)") +
+      theme(axis.title = element_text(size = 25),
+            axis.text = element_text(size = 20),
+            panel.grid.minor.x = element_blank()) +
+      ggNFLtheme
+  })
+  
+  output$predictionPD <- renderPlot({
+    ggplot(predictionPD, aes(Week, Mean_PD, col = Correct_prediction)) +
+      geom_hline(yintercept = 3, col = colour_palette$text, linetype = 2) +
+      geom_hline(yintercept = 7, col = colour_palette$text, linetype = 2) +
+      geom_point() + 
+      geom_line() +
+      scale_x_continuous(limits = c(1, 17), breaks = seq(1, 17, 1)) +
+      labs(y = "Median points difference") +
+      theme(axis.title = element_text(size = 25),
+            axis.text = element_text(size = 20),
+            legend.background = element_rect(fill = colour_palette$background, color = NA),
+            legend.title = element_text(color = colour_palette$text, size = 20),
+            legend.text = element_text(color = colour_palette$text, size = 15),
+            legend.position = "top",
+            panel.grid.minor.x = element_blank()) +
+      scale_color_manual(values = rev(c(colour_palette$text, colour_palette$accent)), name = "Prediction") +
+      ggNFLtheme
   })
 }
 
